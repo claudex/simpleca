@@ -124,6 +124,17 @@ class CaKeys(TemplateTestCase):
         store_context.verify_certificate()
 
 
+    def test_new_certificate_time(self):
+        """ check if the certificate is valid enough time """
+        self.sca.new_cert('test')
+        with open(self.ca_dir + simpleca.CERT_DIR_NAME + '/test.crt') as cert_file:
+            cert = crypto.load_certificate(crypto.FILETYPE_PEM,
+                                           cert_file.read())
+        exp = cert.get_notAfter()
+        one_year = datetime.utcnow() + timedelta(365)
+
+        self.assertEqual(exp.decode('ascii'), one_year.strftime('%Y%m%d%H%M%SZ'))
+
 
 #class PrettyPrint(unittest.TestCase)
 
