@@ -5,6 +5,8 @@ import shutil
 import os.path
 import stat
 
+from datetime import datetime, timedelta
+
 from OpenSSL import crypto
 import simpleca
 
@@ -84,6 +86,17 @@ class CaKeys(TemplateTestCase):
 
     def test_ca_certificate(self):
         """ check if the certificate is auto signed """
+        with open(self.ca_dir + simpleca.CERT_DIR_NAME + '/ca.crt') as cert_file:
+            cert = crypto.load_certificate(crypto.FILETYPE_PEM,
+                                           cert_file.read())
+
+        exp = cert.get_notAfter()
+        ten_years = datetime.utcnow() + timedelta(30*365)
+
+        self.assertEqual(exp.decode('ascii'), ten_years.strftime('%Y%m%d%H%M%SZ'))
+
+    def test_ca_certificate_time(self):
+        """ check if the certificate is valid enough time """
         with open(self.ca_dir + simpleca.CERT_DIR_NAME + '/ca.crt') as cert_file:
             cert = crypto.load_certificate(crypto.FILETYPE_PEM,
                                            cert_file.read())
