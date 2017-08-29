@@ -49,6 +49,7 @@ class SimpleCA:
         self._create_cert(pkey, commonname, extensions)
 
     def _get_serial(self):
+        """ Get the current serial and increment the serial file """
         with open(self.ca_dir + SERIAL_NAME, 'r+') as serial_file:
             fcntl.flock(serial_file, fcntl.LOCK_EX)
             serial = int(serial_file.read())
@@ -58,11 +59,18 @@ class SimpleCA:
         return serial
 
     def _get_cert_path(self, cert_name):
+        """ Get the path where the certificates are stored """
         return self.ca_dir + CERT_DIR_NAME + '/' + cert_name + '.crt'
+
     def _get_key_path(self, key_name):
+        """ Get the path where the private keys are stored """
         return self.ca_dir + PRIVATE_DIR_NAME + '/' + key_name + '.key'
 
     def _create_pkey(self, commonname):
+        """ Generate a key pair and store it in the private key directory
+
+        The key file will be named from the common name
+        """
         pkey = PKey()
         pkey.generate_key(crypto.TYPE_RSA, self.key_bits)
         private = crypto.dump_privatekey(crypto.FILETYPE_PEM,
@@ -75,14 +83,31 @@ class SimpleCA:
 
         return pkey
 
-    def _create_cert(self, pkey, commonname, extensions, expire=365, version=1):
+    def _create_cert(self, pkey, commonname, extensions, **kwargs):
         """ Create a certificate
 
-        Keyword arguments:
+        Arguments:
         pkey -- the key pair for the certificate
         commonname -- the common name for the certificate subject
-        expire -- the number for days the certificate is valid
+        extensions -- the X509Ext list
+
+        Keywords arguments:
+        expire -- the number for days the certificate is valid (default 365)
+        version -- the version number for the certificate (default 1)
         """
+
+        expire_kw = 'expire'
+        if expire_kw in kwargs:
+            expire = kwargs[expire_kw]
+        else:
+            expire = 365
+
+        version_kw = 'version'
+        if version_kw in kwargs:
+            version = kwargs[version_kw]
+        else:
+            version = 1
+
         now = datetime.utcnow()
         cert = X509()
         cert.get_subject().CN = commonname
@@ -139,7 +164,7 @@ class SimpleCA:
         basic_constraints = crypto.X509Extension('basicConstraints'.encode('ascii'), True,
                                                  'CA:TRUE, pathlen:0'.encode('ascii'))
         pkey = self._create_pkey(self.commonname)
-        self._create_cert(pkey, self.commonname, [basic_constraints], 30*365)
+        self._create_cert(pkey, self.commonname, [basic_constraints], expire=30*365)
 
 def _get_pretty_name(name):
     """ Get a pretty string from a X509Name """
