@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """ Unit tests  for simpleca """
 #pylint: disable=protected-access
 import unittest
