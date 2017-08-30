@@ -18,6 +18,7 @@ PRIVATE_DIR_NAME = '/private'
 INDEX_NAME = '/index.txt'
 SERIAL_NAME = '/serial'
 CA_PRIVKEY_NAME = PRIVATE_DIR_NAME + '/ca.key'
+CA_SERIAL = 1000
 
 class SimpleCA:
     """ class handling the CA operations """
@@ -45,8 +46,10 @@ class SimpleCA:
         Keyword arguement:
         commonname -- the certificate subject common name
         """
-        pkey = self._create_pkey(commonname)
-        self._create_cert(pkey, commonname, extensions)
+
+        serial = self._get_serial()
+        pkey = self._create_pkey(commonname, serial)
+        self._create_cert(pkey, commonname, serial, extensions)
 
     def _get_serial(self):
         """ Get the current serial and increment the serial file """
@@ -58,15 +61,33 @@ class SimpleCA:
             serial_file.writelines(['%d'% (serial + 1)])
         return serial
 
-    def _get_cert_path(self, cert_name):
+    def _get_cert_path(self, cert_name, serial):
         """ Get the path where the certificates are stored """
-        return self.ca_dir + CERT_DIR_NAME + '/' + cert_name + '.crt'
+        return '%s%s/%d_%s.crt' % (self.ca_dir, CERT_DIR_NAME, serial,
+                                   cert_name)
 
-    def _get_key_path(self, key_name):
+    def _get_cert_link(self, cert_name):
+        """ Get the path were the certificate are stored without the serial
+
+        This should return a link to the last version of the certificate (i.e.
+        with the highest serial
+        """
+        return '%s%s/%s.crt' % (self.ca_dir, CERT_DIR_NAME, cert_name)
+
+    def _get_key_path(self, key_name, serial):
         """ Get the path where the private keys are stored """
-        return self.ca_dir + PRIVATE_DIR_NAME + '/' + key_name + '.key'
+        return '%s%s/%d_%s.key' % (self.ca_dir, PRIVATE_DIR_NAME, serial,
+                                   key_name)
 
-    def _create_pkey(self, commonname):
+    def _get_key_link(self, key_name):
+        """ Get the path were the private keys are stored without the serial
+
+        This should return a link to the last version of the key (i.e. with the
+        highest serial
+        """
+        return '%s%s/%s.key' % (self.ca_dir, PRIVATE_DIR_NAME, key_name)
+
+    def _create_pkey(self, commonname, serial):
         """ Generate a key pair and store it in the private key directory
 
         The key file will be named from the common name
@@ -75,20 +96,26 @@ class SimpleCA:
         pkey.generate_key(crypto.TYPE_RSA, self.key_bits)
         private = crypto.dump_privatekey(crypto.FILETYPE_PEM,
                                          pkey).decode()
-        key_path = self._get_key_path(commonname)
+        key_path = self._get_key_path(commonname, serial)
         if os.path.exists(key_path):
             raise FileExistsError(key_path)
         with open(key_path, 'w') as private_file:
             private_file.writelines(private)
 
+        key_link = self._get_key_link(commonname)
+        if os.path.exists(key_link):
+            os.unlink(key_link)
+        os.symlink(os.path.basename(key_path), key_link)
+
         return pkey
 
-    def _create_cert(self, pkey, commonname, extensions, **kwargs):
+    def _create_cert(self, pkey, commonname, serial, extensions, **kwargs):
         """ Create a certificate
 
         Arguments:
         pkey -- the key pair for the certificate
         commonname -- the common name for the certificate subject
+        serial -- the certificate serial number
         extensions -- the X509Ext list
 
         Keywords arguments:
@@ -117,7 +144,7 @@ class SimpleCA:
         enddate = (now+timedelta(expire)).strftime('%Y%m%d%H%M%SZ')
         cert.set_notAfter(enddate.encode('ascii'))
         cert.set_pubkey(pkey)
-        cert.set_serial_number(self._get_serial())
+        cert.set_serial_number(serial)
         cert.set_version(version)
 
         if extensions:
@@ -127,15 +154,21 @@ class SimpleCA:
 
         cert_pem = crypto.dump_certificate(crypto.FILETYPE_PEM,
                                            cert).decode()
-        with open(self._get_cert_path(commonname), 'w') as cert_file:
+        cert_path = self._get_cert_path(commonname, serial)
+        with open(cert_path, 'w') as cert_file:
             cert_file.writelines(get_pretty_subject(cert))
             cert_file.writelines(cert_pem)
+
+        cert_link = self._get_cert_link(commonname)
+        if os.path.exists(cert_link):
+            os.unlink(cert_link)
+        os.symlink(os.path.basename(cert_path), cert_link)
 
         return cert
 
     def _sign_cert(self, cert):
         """ Sign the certificate with the given key """
-        with open(self._get_key_path(self.commonname), 'r') as private_file:
+        with open(self._get_key_link(self.commonname), 'r') as private_file:
             data = private_file.read()
             pkey = crypto.load_privatekey(crypto.FILETYPE_PEM,
                                           data)
@@ -156,15 +189,16 @@ class SimpleCA:
         with open(index_name, 'w'):
             pass
         with open(serial_name, 'w') as serial:
-            serial.writelines(['1000'])
+            serial.writelines(['%d' % CA_SERIAL])
 
     def _init_keys(self):
         """ Generate the root CA key pair """
 
         basic_constraints = crypto.X509Extension('basicConstraints'.encode('ascii'), True,
                                                  'CA:TRUE, pathlen:0'.encode('ascii'))
-        pkey = self._create_pkey(self.commonname)
-        self._create_cert(pkey, self.commonname, [basic_constraints], expire=30*365)
+        serial = self._get_serial()
+        pkey = self._create_pkey(self.commonname, serial)
+        self._create_cert(pkey, self.commonname, serial, [basic_constraints], expire=30*365)
 
 def _get_pretty_name(name):
     """ Get a pretty string from a X509Name """
